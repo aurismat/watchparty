@@ -1,0 +1,110 @@
+name: watchparty
+services:
+    caddy:
+        cpu_shares: 90
+        command:
+            - |
+              # An empty or short key would let any wp_key cookie through.
+              case "$$WATCH_KEY" in *[!A-Za-z0-9]*) echo "WATCH_KEY must be alphanumeric"; exit 1;; esac
+              [ $${#WATCH_KEY} -ge 16 ] || { echo "WATCH_KEY must be at least 16 characters"; exit 1; }
+              cat > /etc/caddy/Caddyfile <<'EOF'
+              :18696 {
+                  # Cloudflare caches .mp4/.css/... regardless of cookies; a cached copy skips this gate.
+                  header >Cache-Control "private"
+
+                  @join path /join/{$$WATCH_KEY}
+                  handle @join {
+                      header Set-Cookie "wp_key={$$WATCH_KEY}; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Lax"
+                      redir * / 302
+                  }
+
+                  @member header_regexp Cookie "(?:^|;[ \t]*)wp_key={$$WATCH_KEY}(?:;|$)"
+                  
+                  handle @member {
+                      # SyncTube's /proxy fetches any URL (incl. LAN); uploads need no permission.
+                      handle /proxy* {
+                          respond "Disabled." 403
+                      }
+                      handle /upload* {
+                          respond "Disabled." 403
+                      }
+                      handle /media/* {
+                          root * /srv
+                          file_server browse
+                      }
+                      handle {
+                          reverse_proxy synctube:4200
+                      }
+                  }
+
+                  handle {
+                      respond "Invite link required - ask the host for one." 403
+                  }
+              }
+              EOF
+              exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+        container_name: media-files
+        environment:
+            WATCH_KEY: ${WATCH_KEY:?run ./new-key to create .env}
+        deploy:
+            resources:
+                limits:
+                    memory: "33455865856"
+        entrypoint:
+            - /bin/sh
+            - -c
+        hostname: media-files
+        image: caddy:2
+        networks:
+            caddy: null
+        ports:
+            - mode: ingress
+              target: 18696
+              published: "18696"
+              protocol: tcp
+        restart: unless-stopped
+        volumes:
+            - type: bind
+              source: /DATA/Media/Movies
+              target: /srv/media
+              read_only: true
+              bind:
+                create_host_path: true
+    synctube:
+        build:
+            context: https://github.com/RblSb/SyncTube.git
+            dockerfile: Dockerfile
+        cpu_shares: 90
+        command: []
+        container_name: synctube
+        deploy:
+            resources:
+                limits:
+                    memory: "33455865856"
+        hostname: synctube
+        image: synctube:local
+        networks:
+            caddy: null
+        restart: unless-stopped
+        volumes:
+            - type: bind
+              source: /DATA/AppData/synctube/user
+              target: /app/user
+              bind:
+                create_host_path: true
+networks:
+    caddy:
+        name: caddy
+    default:
+        name: watchparty_default
+x-casaos:
+    author: self
+    category: self
+    hostname: ""
+    icon: ""
+    index: /
+    is_uncontrolled: false
+    port_map: "18696"
+    scheme: http
+    title:
+        custom: SyncTube

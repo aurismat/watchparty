@@ -1,0 +1,9 @@
+#!/bin/sh
+# Rotate the watch party invite key: old links and cookies stop working.
+set -e
+cd "$(dirname "$0")"
+key=$(openssl rand -hex 16)
+umask 077
+echo "WATCH_KEY=$key" > .env
+sudo docker compose up -d caddy
+echo "Invite link: https://watchparty.aurismat.net/join/$key"

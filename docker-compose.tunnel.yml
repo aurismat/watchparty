@@ -1,0 +1,11 @@
+# Overlay: free Cloudflare Quick Tunnel in front of Caddy. See README.
+services:
+    cloudflared:
+        image: cloudflare/cloudflared:latest
+        container_name: cloudflared
+        command: tunnel --no-autoupdate --url http://caddy:18696
+        depends_on:
+            - caddy
+        networks:
+            caddy: null
+        restart: unless-stopped
